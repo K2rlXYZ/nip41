@@ -257,24 +257,30 @@ func GetPubKeyIndex(pubKey string, mnemonic string, maxLength uint32) (uint32, e
 	return 0, errors.New(errStr)
 }
 
-func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string) (nextPrivateKey string, event nostr.Event, err error) {
+func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string) (string, nostr.Event, error) {
+	// Get the index of the compromised public key
 	index, err := GetPubKeyIndex(compromisedPubKey, mnemonic, KEY_CHAIN_LENGTH)
 	if err != nil {
 		return "", nostr.Event{}, err
 	}
 
 	ev := nostr.Event{}
+	// Get the public key of the account that the event will be posted from
 	ev.PubKey, err = GetPubKeyAtIndex(index-1, mnemonic)
 	ev.CreatedAt = nostr.Now()
+	// Revocation event
 	ev.Kind = 13
 
+	// Make the "p" tag ["p", "compromised key"]
 	tag1 := append(append(nostr.Tag{}, "p"), compromisedPubKey)
 
+	// Get the root object
 	root, err := getRootFromMnemonic(mnemonic)
 	if err != nil {
 		return "", nostr.Event{}, err
 	}
 
+	// Get the hidden secret key at the same index as the compromised key
 	hiddenKey, err := getChildSecKeyAtIndex(index, root)
 	if err != nil {
 		return "", nostr.Event{}, err
@@ -285,7 +291,9 @@ func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string)
 		return "", nostr.Event{}, err
 	}
 
+	// Get the public key of the hidden key
 	pkc := hex.EncodeToString(secp256k1.PrivKeyFromBytes(skBytes).PubKey().SerializeCompressed()[1:])
+	// Make the "hidden-key" tag ["hidden-key", "hidden public key of the compromised key"]
 	tag2 := append(append(nostr.Tag{}, "hidden-key"), pkc)
 
 	tags := nostr.Tags{tag1, tag2}
@@ -293,30 +301,20 @@ func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string)
 
 	ev.Content = content
 
-	sk, err := GetSecKeyAtIndex(index+1, mnemonic)
+	// Get the secret key of the account the event will be posted from
+	secKey, err := GetSecKeyAtIndex(index+1, mnemonic)
 	if err != nil {
 		return "", nostr.Event{}, err
 	}
 
-	ev.Sign(sk)
+	ev.Sign(secKey)
 
-	nsk, err := GetSecKeyAtIndex(index, mnemonic)
+	nextSecKey, err := GetSecKeyAtIndex(index, mnemonic)
 	if err != nil {
 		return "", nostr.Event{}, err
 	}
 
-	return nsk, ev, nil
-}
-
-func BuildRevocationEventFromSecKey(compromisedSecKey, mnemonic, content string) (string, nostr.Event, error) {
-	skBytes, err := hex.DecodeString(compromisedSecKey)
-	if err != nil {
-		return "", nostr.Event{}, err
-	}
-
-	compromisedPubKey := hex.EncodeToString(secp256k1.PrivKeyFromBytes(skBytes).PubKey().SerializeCompressed()[1:])
-
-	return BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content)
+	return nextSecKey, ev, nil
 }
 
 func ValidateRevocationEvent(revEvent nostr.Event, mnemonic string) (bool, error) {
