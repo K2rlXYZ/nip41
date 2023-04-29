@@ -74,6 +74,8 @@ func getChildSecKeyAtIndex(index uint32, root *bip32.Key) (string, error) {
 
 // Get hidden secret key from hidden parent secret key and hidden child secret key
 func getSecKey(parentSecKey string, childSecKey string) (string, error) {
+	//sk2 = sk2' + sha256(pk1 || pk2')
+	//sk3 = sk3' + sha256(pk2 || pk3')
 	bytesparentSecKey, err := hex.DecodeString(parentSecKey)
 	if err != nil {
 		return "", err
@@ -88,11 +90,11 @@ func getSecKey(parentSecKey string, childSecKey string) (string, error) {
 	pubKeyParent := secp256k1.PrivKeyFromBytes(bytesparentSecKey).PubKey().SerializeCompressed()[1:]
 	pubKeyChild := secp256k1.PrivKeyFromBytes(bytesChildSecKey).PubKey().SerializeCompressed()[1:]
 
-	// Hash sum, hash = sha256(pk(i-1)x' || pk(i)x')
+	// Hash sum, hash = sha256(pk1 || pk2')
 	hash := sha256.Sum256(append(pubKeyParent, pubKeyChild...))
 	hashBig := new(big.Int).SetBytes(hash[:])
 
-	// Add the hash sum to the secret key i (Hidden),  ski = ski' + hash
+	// Add the hash sum to the secret key,  sk2 = sk2' + hash
 	var secKeyBig big.Int
 	secKeyChildBig := new(big.Int).SetBytes(bytesChildSecKey)
 	secKeyBig.Add(secKeyChildBig, hashBig)
@@ -118,6 +120,8 @@ func GetSecKeyAtIndex(index uint32, mnemonic string) (string, error) {
 	var nonHiddenSecKey string
 
 	// Iterate through the indexes to get a secret key for use
+	//sk2 = sk2' + sha256(pk1 || pk2')
+	//sk3 = sk3' + sha256(pk2 || pk3')
 	for x := uint32(1); x <= index; x++ {
 		// Get the hidden child secret key at index x
 		childSecKey, err := getChildSecKeyAtIndex(x, root)
@@ -150,6 +154,7 @@ func GetSecKeyIndex(sk string, mnemonic string, maxLength uint32) (uint32, error
 	}
 	nonHiddenSecKey := rootSecKey
 
+	//sk2 = sk2' + sha256(pk1 || pk2')
 	for x := uint32(1); x <= maxLength; x++ {
 		// Get the hidden child secret key at index x
 		childSecKey, err := getChildSecKeyAtIndex(x, root)
@@ -211,6 +216,8 @@ func GetPubKeyIndex(pubKey string, mnemonic string, maxLength uint32) (uint32, e
 		return 0, nil
 	}
 
+	//sk2 = sk2' + sha256(pk1 || pk2')
+	//pk2 = (sk2)*G
 	for x := uint32(1); x < maxLength; x++ {
 		// Get the hidden child secret key at index x
 		childSecKey, err := getChildSecKeyAtIndex(x, root)
@@ -392,11 +399,9 @@ func differentgetChildPublicKey(parentPubKey, hiddenPubKey string) (string, erro
 		return "", err
 	}
 
-	// Hash sum, hash = sha256(pk(i-1)x' || pk(i)x')
 	hash := sha256.Sum256(append(bytesChildPubKey, bytesParentPubKey...))
 	hashBig := new(big.Int).SetBytes(hash[:])
 
-	// Add the hash sum to the secret key i (Hidden),  ski = ski' + hash
 	var pubKeyBig big.Int
 	pubKeyChildBig := new(big.Int).SetBytes(bytesChildPubKey)
 	pubKeyBig.Add(pubKeyChildBig, hashBig)
