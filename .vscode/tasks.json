@@ -13,8 +13,24 @@
             },
             "group": {
                 "kind": "test",
-                "isDefault": true
+                "isDefault": false
             }
+        },
+        {
+            "type": "shell",
+            "label": "go build",
+            "command": "go",
+            "args": [
+                "build",
+                "-o",
+                "nip41-cli.exe"
+            ],
+            "options": {
+                "cwd": "${fileDirname}/.."
+            },
+            "group": {
+                "isDefault": true
+            }    
         }
     ],
     "version": "2.0.0"

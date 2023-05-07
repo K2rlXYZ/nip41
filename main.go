@@ -33,6 +33,7 @@ Usage:
   nip41-cli seckey next [--index]`
 
 func main() {
+	__()
 	// find datadir
 	flag.StringVar(&config.DataDir, "datadir", "~/.config/nostr",
 		"Base directory for configurations and data from Nostr.")
