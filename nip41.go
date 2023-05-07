@@ -74,6 +74,8 @@ func getChildSecKeyAtIndex(index uint32, root *bip32.Key) (string, error) {
 
 // Get hidden secret key from hidden parent secret key and hidden child secret key
 func getSecKey(parentSecKey string, childSecKey string) (string, error) {
+	//sk2 = sk2' + sha256(pk1 || pk2')
+	//sk3 = sk3' + sha256(pk2 || pk3')
 	bytesparentSecKey, err := hex.DecodeString(parentSecKey)
 	if err != nil {
 		return "", err
@@ -86,17 +88,23 @@ func getSecKey(parentSecKey string, childSecKey string) (string, error) {
 
 	// Get the public keys for the non hidden root key and its child key
 	pubKeyParent := secp256k1.PrivKeyFromBytes(bytesparentSecKey).PubKey().SerializeCompressed()[1:]
+	pubKeyParent := secp256k1.PrivKeyFromBytes(bytesparentSecKey).PubKey().SerializeCompressed()[1:]
 	pubKeyChild := secp256k1.PrivKeyFromBytes(bytesChildSecKey).PubKey().SerializeCompressed()[1:]
 
+	// Hash sum, hash = sha256(pk1 || pk2')
+	hash := sha256.Sum256(append(pubKeyParent, pubKeyChild...))
 	// Hash sum, hash = sha256(pk(i-1)x' || pk(i)x')
 	hash := sha256.Sum256(append(pubKeyParent, pubKeyChild...))
 	hashBig := new(big.Int).SetBytes(hash[:])
 
-	// Add the hash sum to the secret key i (Hidden),  ski = ski' + hash
+	// Add the hash sum to the secret key,  sk2 = sk2' + hash
 	var secKeyBig big.Int
 	secKeyChildBig := new(big.Int).SetBytes(bytesChildSecKey)
 	secKeyBig.Add(secKeyChildBig, hashBig)
 
+	secKey := secp256k1.PrivKeyFromBytes(secKeyBig.Bytes()).Serialize()
+
+	return hex.EncodeToString(secKey), nil
 	secKey := secp256k1.PrivKeyFromBytes(secKeyBig.Bytes()).Serialize()
 
 	return hex.EncodeToString(secKey), nil
@@ -118,6 +126,8 @@ func GetSecKeyAtIndex(index uint32, mnemonic string) (string, error) {
 	var nonHiddenSecKey string
 
 	// Iterate through the indexes to get a secret key for use
+	//sk2 = sk2' + sha256(pk1 || pk2')
+	//sk3 = sk3' + sha256(pk2 || pk3')
 	for x := uint32(1); x <= index; x++ {
 		// Get the hidden child secret key at index x
 		childSecKey, err := getChildSecKeyAtIndex(x, root)
@@ -150,6 +160,7 @@ func GetSecKeyIndex(sk string, mnemonic string, maxLength uint32) (uint32, error
 	}
 	nonHiddenSecKey := rootSecKey
 
+	//sk2 = sk2' + sha256(pk1 || pk2')
 	for x := uint32(1); x <= maxLength; x++ {
 		// Get the hidden child secret key at index x
 		childSecKey, err := getChildSecKeyAtIndex(x, root)
@@ -198,7 +209,9 @@ func GetPubKeyIndex(pubKey string, mnemonic string, maxLength uint32) (uint32, e
 
 	// Get the root secret key from the root object
 	nonHiddenSecKey := hex.EncodeToString(root.Key)
+	nonHiddenSecKey := hex.EncodeToString(root.Key)
 
+	skBytes, err := hex.DecodeString(nonHiddenSecKey)
 	skBytes, err := hex.DecodeString(nonHiddenSecKey)
 	if err != nil {
 		return 0, err
@@ -211,6 +224,8 @@ func GetPubKeyIndex(pubKey string, mnemonic string, maxLength uint32) (uint32, e
 		return 0, nil
 	}
 
+	//sk2 = sk2' + sha256(pk1 || pk2')
+	//pk2 = (sk2)*G
 	for x := uint32(1); x < maxLength; x++ {
 		// Get the hidden child secret key at index x
 		childSecKey, err := getChildSecKeyAtIndex(x, root)
@@ -220,10 +235,12 @@ func GetPubKeyIndex(pubKey string, mnemonic string, maxLength uint32) (uint32, e
 
 		// Get the non hidden secret key from the last secret key (non hidden parent key) and the child secret key at the current index
 		nonHiddenSecKey, err = getSecKey(nonHiddenSecKey, childSecKey)
+		nonHiddenSecKey, err = getSecKey(nonHiddenSecKey, childSecKey)
 		if err != nil {
 			return 0, err
 		}
 
+		skBytes, err := hex.DecodeString(nonHiddenSecKey)
 		skBytes, err := hex.DecodeString(nonHiddenSecKey)
 		if err != nil {
 			return 0, err
@@ -233,11 +250,13 @@ func GetPubKeyIndex(pubKey string, mnemonic string, maxLength uint32) (uint32, e
 		pkc := hex.EncodeToString(secp256k1.PrivKeyFromBytes(skBytes).PubKey().SerializeCompressed()[1:])
 
 		fmt.Println("cpk", x, pkc)
+		fmt.Println("cpk", x, pkc)
 		if pubKey == pkc {
 			return x, nil
 		}
 	}
 
+	errStr := fmt.Sprintf("Public key not in this chain of length %v", maxLength)
 	errStr := fmt.Sprintf("Public key not in this chain of length %v", maxLength)
 	return 0, errors.New(errStr)
 }
@@ -253,12 +272,14 @@ func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string)
 	// Get the public key of the account that the event will be posted from
 	ev.PubKey, err = GetPubKeyAtIndex(index-1, mnemonic)
 	fmt.Println(ev.PubKey)
+	fmt.Println(ev.PubKey)
 	ev.CreatedAt = nostr.Now()
 	// Revocation event
 	ev.Kind = 13
 
 	// Make the "p" tag ["p", "compromised key"]
 	tag1 := append(append(nostr.Tag{}, "p"), compromisedPubKey)
+	fmt.Println(compromisedPubKey)
 	fmt.Println(compromisedPubKey)
 
 	// Get the root object
@@ -281,6 +302,7 @@ func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string)
 	// Get the public key of the hidden key
 	pkc := hex.EncodeToString(secp256k1.PrivKeyFromBytes(skBytes).PubKey().SerializeCompressed()[1:])
 	fmt.Println(pkc)
+	fmt.Println(pkc)
 	// Make the "hidden-key" tag ["hidden-key", "hidden public key of the compromised key"]
 	tag2 := append(append(nostr.Tag{}, "hidden-key"), pkc)
 
@@ -298,6 +320,7 @@ func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string)
 	ev.Sign(secKey)
 
 	// Get the next secret key to use
+	// Get the next secret key to use
 	nextSecKey, err := GetSecKeyAtIndex(index, mnemonic)
 	if err != nil {
 		return "", nostr.Event{}, err
@@ -308,10 +331,14 @@ func BuildRevocationEventFromPubKey(compromisedPubKey, mnemonic, content string)
 
 func ValidateRevocationEvent(revEvent nostr.Event) (bool, error) {
 	// Check that it is a revocation event
+func ValidateRevocationEvent(revEvent nostr.Event) (bool, error) {
+	// Check that it is a revocation event
 	if revEvent.Kind != 13 {
+		return false, errors.New("Not a revocation event")
 		return false, errors.New("Not a revocation event")
 	}
 
+	// Check that the siganture is correct
 	// Check that the siganture is correct
 	sigGood, err := revEvent.CheckSignature()
 	if err != nil {
@@ -319,15 +346,19 @@ func ValidateRevocationEvent(revEvent nostr.Event) (bool, error) {
 	}
 	if !sigGood {
 		return false, errors.New("Incorrect signature")
+		return false, errors.New("Incorrect signature")
 	}
 
 	// Check that the "p" tag is present
+	// Check that the "p" tag is present
 	pTagIsntInEv := true
+	var compromisedPubKey string
 	var compromisedPubKey string
 	for x := 0; x < len(revEvent.Tags); x++ {
 		for y := 0; x < len(revEvent.Tags[x]); y++ {
 			if revEvent.Tags[x][y] == "p" {
 				pTagIsntInEv = false
+				compromisedPubKey = revEvent.Tags[x][y+1]
 				compromisedPubKey = revEvent.Tags[x][y+1]
 			}
 		}
